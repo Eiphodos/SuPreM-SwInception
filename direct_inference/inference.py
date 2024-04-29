@@ -9,6 +9,7 @@ import nibabel as nib
 from monai.inferers import sliding_window_inference
 from model.Universal_model import Universal_model
 from model.SwinUNETR_target import SwinUNETR
+from model.SwInception import SwInception
 from dataset.dataloader_test import get_loader, taskmap_set
 from utils.utils import threshold_organ, pseudo_label_all_organ, pseudo_label_single_organ
 from utils.utils import TEMPLATE, NUM_CLASS,ORGAN_NAME_LOW
@@ -154,7 +155,7 @@ def main():
     ## hyperparameter
     parser.add_argument('--max_epoch', default=1000, type=int, help='Number of training epoches')
     parser.add_argument('--store_num', default=10, type=int, help='Store model how often')
-    parser.add_argument('--lr', default=1e-4, type=float, help='Learning rate')
+    parser.add_argument('--lr', default=4e-4, type=float, help='Learning rate')
     parser.add_argument('--weight_decay', default=1e-5, type=float, help='Weight Decay')
 
     ## dataset
@@ -165,9 +166,9 @@ def main():
     parser.add_argument('--a_max', default=250, type=float, help='a_max in ScaleIntensityRanged')
     parser.add_argument('--b_min', default=0.0, type=float, help='b_min in ScaleIntensityRanged')
     parser.add_argument('--b_max', default=1.0, type=float, help='b_max in ScaleIntensityRanged')
-    parser.add_argument('--space_x', default=1.5, type=float, help='spacing in x direction')
-    parser.add_argument('--space_y', default=1.5, type=float, help='spacing in y direction')
-    parser.add_argument('--space_z', default=1.5, type=float, help='spacing in z direction')
+    parser.add_argument('--space_x', default=1, type=float, help='spacing in x direction')
+    parser.add_argument('--space_y', default=1, type=float, help='spacing in y direction')
+    parser.add_argument('--space_z', default=1, type=float, help='spacing in z direction')
     parser.add_argument('--roi_x', default=96, type=int, help='roi size in x direction')
     parser.add_argument('--roi_y', default=96, type=int, help='roi size in y direction')
     parser.add_argument('--roi_z', default=96, type=int, help='roi size in z direction')
@@ -187,7 +188,7 @@ def main():
     parser.add_argument('--backbone', default='unet', help='backbone [swinunetr or unet]')
     parser.add_argument('--create_dataset',action="store_true", default=False)
     parser.add_argument('--suprem',action="store_true", default=False)
-    parser.add_argument('--customize',action="store_true", default=False)
+    parser.add_argument('--backbone', default='SwInception', help='model backbone, SwInception backbone by default')
 
     args = parser.parse_args()
 
@@ -209,8 +210,9 @@ def main():
 
         for i in range(len(store_dict)):
             store_dict[store_dict_keys[i]] = load_dict_value[i]
-    
-    if args.customize:
+        model.load_state_dict(store_dict)
+        print('Use pretrained weights')
+    if args.backbone == 'swinunetr':
         model = SwinUNETR(img_size=(args.roi_x, args.roi_y, args.roi_z),
                     in_channels=1,
                     out_channels=args.num_class,
@@ -230,9 +232,23 @@ def main():
                 store_dict[new_key] = model_dict[key]   
                 amount += 1
         print(amount, len(store_dict.keys()))
-        
-    model.load_state_dict(store_dict)
-    print('Use pretrained weights')
+        model.load_state_dict(store_dict)
+        print('Use pretrained weights')
+    if args.backbone == 'swinception':
+        model = SwInception(in_channels=1,
+                            out_channels=args.num_class,
+                            img_size=(args.roi_x, args.roi_y, args.roi_z),
+                            hidden_size=48)
+        model_dict = torch.load(args.checkpoint)['model']
+        if "module." in list(model_dict.keys())[0]:
+            print("Tag 'module.' found in state dict - fixing!")
+            for key in list(model_dict.keys()):
+                model_dict[key.replace("module.", "")] = model_dict.pop(key)
+        m_k, u_k = model.load_state_dict(model_weights, strict=False)
+        if len(m_k) > 0:
+            print(f'missing keys in source state_dict: {", ".join(m_k)}\n')
+        if len(u_k) > 0:
+            print(f'unexpected keys in source state_dict: {", ".join(u_k)}\n')
     model.cuda()
     torch.backends.cudnn.benchmark = True
     test_loader, val_transforms = get_loader(args)

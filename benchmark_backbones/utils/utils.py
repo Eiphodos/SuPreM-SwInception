@@ -464,5 +464,31 @@ def check_data(dataset_check):
     plt.imshow(label[0, :, :, 150].detach().cpu())
     plt.show()
 
+def load_model(pretrained, model):
+    state_dicts = torch.load(pretrained)
+    pt_weights = state_dicts['state_dict']
+    pt_keys = pt_weights.keys()
+    new_old_key_pairs = []
+    # Remove DDP layer names
+    for k in pt_keys:
+        kn = k.replace('module.', '')
+        new_old_key_pairs.append((kn, k))
+    encoder_weights = OrderedDict()
+    for new_key, old_key in new_old_key_pairs:
+        encoder_weights[new_key] = pt_weights[old_key]
+    current_model_dict = model.encoder.state_dict()
+    keys_in_model = [k for k in encoder_weights.keys() if k in current_model_dict.keys()]
+    mm_k = [k for k in keys_in_model if encoder_weights[k].size() != current_model_dict[k].size()]
+    encoder_weights = {
+        k: encoder_weights[k] if encoder_weights[k].size() == current_model_dict[k].size() else current_model_dict[k]
+        for k in keys_in_model}
+    m_k, u_k = model.encoder.load_state_dict(encoder_weights, strict=False)
+    if len(m_k) > 0:
+        print(f'missing keys in source state_dict: {", ".join(m_k)}\n')
+    if len(u_k) > 0:
+        print(f'unexpected keys in source state_dict: {", ".join(u_k)}\n')
+    if len(mm_k) > 0:
+        print(f'mismatched size for keys in state_dicts: {", ".join(mm_k)}\n')
+
 if __name__ == "__main__":
     threshold_organ(torch.zeros(1,12,1))    

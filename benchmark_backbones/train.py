@@ -14,7 +14,9 @@ from tensorboardX import SummaryWriter
 
 from model.unet3d import UNet
 from model.SwinUNETR import SwinUNETR
+from model.SwInception import SwInception
 from utils import loss
+from utils.utils import load_model
 from optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 
 torch.multiprocessing.set_sharing_strategy('file_system')
@@ -75,9 +77,17 @@ def process(args):
                           dropout_path_rate=0.0,
                           use_checkpoint=False,
                          )
+    if args.backbone == 'swinception':
+        model = SwInception(in_channels=1,
+                            out_channels=args.num_class,
+                            img_size=(args.roi_x, args.roi_y, args.roi_z),
+                            hidden_size=48)
 
     model.to(args.device)
     model.train()
+
+    if args.pretrained is not None:
+        load_model(args.pretrained, model)
 
     if args.dist:
         model = DistributedDataParallel(model, device_ids=[args.device])
@@ -139,22 +149,22 @@ def main():
     parser.add_argument("--epoch", default=0)
     parser.add_argument('--max_epoch', default=800, type=int, help='Number of training epoches')
     parser.add_argument('--warmup_epoch', default=20, type=int, help='number of warmup epochs')
-    parser.add_argument('--lr', default=1e-4, type=float, help='Learning rate')
+    parser.add_argument('--lr', default=4e-4, type=float, help='Learning rate')
     parser.add_argument('--weight_decay', default=1e-5, help='Weight Decay')
-    parser.add_argument('--backbone', default='unet', help='model backbone, unet backbone by default') 
+    parser.add_argument('--backbone', default='SwInception', help='model backbone, SwInception backbone by default')
     
     ## dataset
     parser.add_argument('--dataset_list', nargs='+', default=['AbdomenAtlas1.0'])
     parser.add_argument('--data_root_path', default='/data2/wenxuan/AbdomenAtlas1.0', help='data root path')
     parser.add_argument('--data_txt_path', default='./dataset/dataset_list/', help='data txt path')
-    parser.add_argument('--batch_size', default=2, type=int, help='batch size')
+    parser.add_argument('--batch_size', default=1, type=int, help='batch size')
     parser.add_argument('--a_min', default=-175, type=float, help='a_min in ScaleIntensityRanged')
     parser.add_argument('--a_max', default=250, type=float, help='a_max in ScaleIntensityRanged')
     parser.add_argument('--b_min', default=0.0, type=float, help='b_min in ScaleIntensityRanged')
     parser.add_argument('--b_max', default=1.0, type=float, help='b_max in ScaleIntensityRanged')
-    parser.add_argument('--space_x', default=1.5, type=float, help='spacing in x direction')
-    parser.add_argument('--space_y', default=1.5, type=float, help='spacing in y direction')
-    parser.add_argument('--space_z', default=1.5, type=float, help='spacing in z direction')
+    parser.add_argument('--space_x', default=1, type=float, help='spacing in x direction')
+    parser.add_argument('--space_y', default=1, type=float, help='spacing in y direction')
+    parser.add_argument('--space_z', default=1, type=float, help='spacing in z direction')
     parser.add_argument('--roi_x', default=96, type=int, help='roi size in x direction')
     parser.add_argument('--roi_y', default=96, type=int, help='roi size in y direction')
     parser.add_argument('--roi_z', default=96, type=int, help='roi size in z direction')
@@ -163,7 +173,7 @@ def main():
     parser.add_argument('--cache_rate', default=0.6, type=float, help='the percentage of cached data in total')
     parser.add_argument('--cache_num', default=3000, type=int, help='the number of cached data')
     parser.add_argument('--num_class', default=9, type=int, help='number of class')
-
+    parser.add_argument('--pretrained', type=str, required=False, help='Pretrained weights')
     args = parser.parse_args()
     
     process(args=args)
